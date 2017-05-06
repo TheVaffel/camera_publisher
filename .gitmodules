@@ -1,0 +1,3 @@
+[submodule "include/HConLib"]
+	path = include/HConLib
+	url = https://github.com/TheVaffel/HConLib.git
