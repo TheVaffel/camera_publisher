@@ -5,6 +5,8 @@
 #include <turbojpeg.h>
 #include <cmath>
 
+#include <cstdio>
+
 #define USE_TURBOJPEG
 #include <webcam/webcam.h>
 
@@ -43,11 +45,11 @@ int main(int argc, char** argv){
   image_transport::Publisher pub = it.advertise(topic_name, 1);
 
   if(input_format == "jpeg"){
-    webcam_init_full_name(w, h, device_name);
+    webcam_init_full_name(w, h, device_name.c_str());
   }else if(input_format == "yuyv"){
-    webcam_init_full_name(w, h, device_name, WEBCAM_MODE_YUYV);
+    webcam_init_full_name(w, h, device_name.c_str(), WEBCAM_MODE_YUYV);
   }else if(input_format == "bayer"){
-    webcam_init_full_name(w, h, device_name, WEBCAM_MODE_BAYER);
+    webcam_init_full_name(w, h, device_name.c_str(), WEBCAM_MODE_BAYER);
   }else{
     ROS_FATAL("input_format not recognized");
     exit(1);
@@ -56,7 +58,8 @@ int main(int argc, char** argv){
   unsigned char* input_buffer = new unsigned char[w*h*4];
   unsigned char* output_buffer = new unsigned char[out_w*out_h*3];
   int scale = w/out_w;
-  bool reliable_scale = scale*out_w == w; // In case it's not an integer multiple
+  int scale2 = h/out_h;
+  bool reliable_scale = scale*out_w == w && scale*out_h == h && scale == scale2; // In case it's not an integer multiple
 
   int scale_power = 1<<30;
   while(!((1<<scale_power)&scale)){
@@ -66,10 +69,11 @@ int main(int argc, char** argv){
     webcam_capture_image(input_buffer);
 
     if(w == out_w && h == out_h){
-      unsigned char* p_i = input_buffer, p_o = output_buffer;
+      unsigned char* p_i = input_buffer, *p_o;
       for(int i = 0; i < w*h; i++){
+	p_o = output_buffer + (i + 1)*3;
 	for(int j = 0; j < 3; j++){
-	  *(p_o++) = *(p_i++);
+	  *(--p_o) = *(p_i++);
 	}
 	p_i++;
       }
@@ -77,7 +81,7 @@ int main(int argc, char** argv){
       unsigned char* p_o = output_buffer;
       for(int i = 0; i < out_h; i++){
 	for(int j = 0; j < out_w; j++){
-	  int r, g, b = 0;
+	  int r = 0, g = 0, b = 0;
 	  int offx = j<<scale_power;
 	  int offy = i<<scale_power;
 	  for(int u = 0; u < scale ;u++){
@@ -87,9 +91,11 @@ int main(int argc, char** argv){
 	      b += input_buffer[4*((offy + u)*w + offx + v) + 2];
 	    }
 	  }
-	  *(p_o++) = r;
-	  *(p_o++) = g;
-	  *(p_o++) = b;
+	  
+	  //printf("R = %d, G = %d, B = %d\n", r, b, g);
+	  *(p_o++) = (unsigned char)(b>>(scale_power*2));
+	  *(p_o++) = (unsigned char)(g>>(scale_power*2));
+	  *(p_o++) = (unsigned char)(r>>(scale_power*2));
 	}
       }
     }else{
@@ -109,8 +115,8 @@ int main(int argc, char** argv){
 	  int index_o = 3*(i*out_w + j);
 	  int index_i = 4*(y1*w + x1);
 
-	  int xy = dx*dy; int ixy = (1 - dx)*dy; int xiy = dx*(1 - dy); int ixiy = (1 - dx)*(1 - dy);
-	  output_buffer[index_o] = (unsigned char)(ixiy*input_buffer[index_i]
+	  float xy = dx*dy; float ixy = (1 - dx)*dy; float xiy = dx*(1 - dy); float ixiy = (1 - dx)*(1 - dy);
+	  output_buffer[index_o + 2] = (unsigned char)(ixiy*input_buffer[index_i]
 						   + ixy*input_buffer[index_i + 4]
 						   + xiy*input_buffer[index_i + 4*w]
 						   + xy*input_buffer[index_i + 4*(w + 1)]);
@@ -120,7 +126,7 @@ int main(int argc, char** argv){
 						       + xiy*input_buffer[index_i + 4*w]
 						       + xy*input_buffer[index_i + 4*(w + 1)]);
 	  index_i++;
-	  output_buffer[index_o + 2] = (unsigned char)(ixiy*input_buffer[index_i]
+	  output_buffer[index_o] = (unsigned char)(ixiy*input_buffer[index_i]
 						       + ixy*input_buffer[index_i + 4]
 						       + xiy*input_buffer[index_i + 4*w]
 						       + xy*input_buffer[index_i + 4*(w + 1)]);
@@ -133,10 +139,10 @@ int main(int argc, char** argv){
     output_image.height = out_h;
     output_image.width = out_w;
     output_image.encoding = "rgb8";
-    output_image.isbigendian = false;
-    output_image.step = 3*width;
+    output_image.is_bigendian = false;
+    output_image.step = 3*out_w;
 
-    output_image.data = std::vector<unsigned char> (output_buffer, output_buffer + (width*height*3));
+    output_image.data = std::vector<unsigned char> (output_buffer, output_buffer + (out_w*out_h*3));
 
     pub.publish(output_image);
   }
