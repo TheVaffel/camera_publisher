@@ -1,5 +1,0 @@
-<launch>
-	<node pkg="camera_publisher" type="camera_publisher_node" name="camera_publisher" output="screen">
-
-	      <param name="device_name" type="string" value="/dev/video0" />
-	      <param name="topic_name" type="string" value="data/video1" />
